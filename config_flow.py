@@ -1,6 +1,11 @@
 from homeassistant import config_entries
 import voluptuous as vol
-from .const import DOMAIN, CONF_IP
+from .const import (
+    DOMAIN,
+    CONF_IP,
+    CONF_RETRY_DELAY,
+    DEFAULT_RETRY_DELAY,
+)
 
 @config_entries.HANDLERS.register(DOMAIN)
 class CentauriCarbonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -11,13 +16,15 @@ class CentauriCarbonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             return self.async_create_entry(title="Centauri Carbon", data={
-                CONF_IP: user_input[CONF_IP]
+                CONF_IP: user_input[CONF_IP],
+                CONF_RETRY_DELAY: user_input.get(CONF_RETRY_DELAY, DEFAULT_RETRY_DELAY),
             })
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({
-                vol.Required(CONF_IP): str
+                vol.Required(CONF_IP): str,
+                vol.Optional(CONF_RETRY_DELAY, default=DEFAULT_RETRY_DELAY): int,
             }),
             errors=errors
         )

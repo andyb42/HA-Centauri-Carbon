@@ -1,4 +1,6 @@
 import aiohttp
+import asyncio
+from homeassistant.helpers import aiohttp_client
 import json
 import logging
 import uuid
@@ -7,28 +9,43 @@ import time
 _LOGGER = logging.getLogger(__name__)
 
 class CentauriWebSocketClient:
-    def __init__(self, hass, ip_address):
+    def __init__(self, hass, ip_address, retry_delay=5):
         self._hass = hass
         self._ws = None
         self.data = {}
         self.ip = ip_address
         self.url = f"ws://{ip_address}:3030/websocket"
+        self._retry_delay = retry_delay
+        self._running = False
 
     async def connect(self):
-        session = aiohttp.ClientSession()
-        try:
-            self._ws = await session.ws_connect(self.url)
-            _LOGGER.info("Connected to Centauri WebSocket")
+        session = aiohttp_client.async_get_clientsession(self._hass)
+        self._running = True
+        while self._running:
+            try:
+                async with session.ws_connect(self.url) as ws:
+                    self._ws = ws
+                    _LOGGER.info("Connected to Centauri WebSocket")
 
-            async for msg in self._ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    payload = json.loads(msg.data)
-                    _LOGGER.debug(f"Received WS payload: {payload}")
-                    self._handle_message(payload)
-        except Exception as e:
-            _LOGGER.error(f"WebSocket connection failed: {e}")
-        finally:
-            await session.close()
+                    async for msg in ws:
+                        if not self._running:
+                            break
+                        if msg.type == aiohttp.WSMsgType.TEXT:
+                            payload = json.loads(msg.data)
+                            _LOGGER.debug(f"Received WS payload: {payload}")
+                            self._handle_message(payload)
+            except Exception as e:
+                _LOGGER.error(f"WebSocket connection failed: {e}")
+            finally:
+                self._ws = None
+
+            if self._running:
+                await asyncio.sleep(self._retry_delay)
+
+    async def async_close(self):
+        self._running = False
+        if self._ws and not self._ws.closed:
+            await self._ws.close()
 
     async def send_command(self, data: dict):
         if not self._ws or self._ws.closed:
